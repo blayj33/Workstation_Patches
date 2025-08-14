@@ -1,7 +1,6 @@
 #!ps
 #maxlength=500000
 #timeout=900000
-
 <#
 .SYNOPSIS
   Stops ForeScout SecureConnector and force-removes its install directory.
