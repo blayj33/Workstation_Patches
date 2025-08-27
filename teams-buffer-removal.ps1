@@ -1,44 +1,36 @@
 #!ps
 #maxlength=500000
 #timeout=900000
-<#
-.SYNOPSIS
-  Deletes the Teams cache & application folder under every local user profile.
+# Uninstall Teams for all users if version < 1.6.00.26474
+$ErrorActionPreference = "Stop"
+$targetVersion = [Version]"1.6.00.26474"
 
-.DESCRIPTION
-  Iterates through each folder in C:\Users, looks for
-  AppData\Local\Microsoft\Teams, and removes it if present.
+Get-ChildItem 'C:\Users' -Directory |
+Where-Object { $_.Name -notin 'Default','Public','All Users' } |
+ForEach-Object {
+    $teamsPath = "$($_.FullName)\AppData\Local\Microsoft\Teams"
+    $updateExe = Join-Path $teamsPath 'Update.exe'
+    $teamsExe  = Join-Path $teamsPath 'current\Teams.exe'
 
-.NOTES
-  Must be run with administrative privileges to delete other users’ folders.
-#>
-
-# Ensure script runs elevated
-if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()
-    ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
-{
-    Write-Warning "This script must be run as Administrator."
-    exit 1
-}
-
-# Base path for user profiles
-$usersRoot = Join-Path $env:SystemDrive 'Users'
-
-# Walk each profile folder
-Get-ChildItem -Path $usersRoot -Directory | ForEach-Object {
-    $profileName = $_.Name
-    $teamsFolder = Join-Path $_.FullName 'AppData\Local\Microsoft\Teams'
-
-    if (Test-Path $teamsFolder) {
+    if ((Test-Path $updateExe) -and (Test-Path $teamsExe)) {
         try {
-            Remove-Item -Path $teamsFolder -Recurse -Force -ErrorAction Stop
-            Write-Output "Deleted Teams folder for user '$profileName': $teamsFolder"
+            $version = [Version](Get-Item $teamsExe).VersionInfo.ProductVersion
+            if ($version -lt $targetVersion) {
+                Write-Output "Uninstalling Teams for '$($_.Name)' (v$version)..."
+                $code = (Start-Process $updateExe -ArgumentList "-uninstall -s" -Wait -PassThru).ExitCode
+                if ($code -eq 0) { Write-Output "Uninstalled successfully." }
+                else { Write-Output "Uninstall failed. ExitCode: $code" }
+                if (Test-Path $teamsPath) {
+                    Remove-Item $teamsPath -Recurse -Force
+                    Write-Output "Removed Teams directory."
+                }
+            } else {
+                Write-Output "Skipping '$($_.Name)'; v$version is current."
+            }
+        } catch {
+            Write-Output "Error processing '$($_.Name)': $_"
         }
-        catch {
-            Write-Warning "Failed to delete Teams folder for user '$profileName': $_"
-        }
-    }
-    else {
-        Write-Output "No Teams folder found for user '$profileName'."
     }
 }
+
+exit 0
