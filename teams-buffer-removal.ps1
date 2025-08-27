@@ -1,36 +1,31 @@
 #!ps
 #maxlength=500000
 #timeout=900000
-# Uninstall Teams for all users if version < 1.6.00.26474
+# Detect Microsoft Teams installs prior to or equal to 1.6.00.26474
 $ErrorActionPreference = "Stop"
 $targetVersion = [Version]"1.6.00.26474"
+$found = $false
 
 Get-ChildItem 'C:\Users' -Directory |
 Where-Object { $_.Name -notin 'Default','Public','All Users' } |
 ForEach-Object {
-    $teamsPath = "$($_.FullName)\AppData\Local\Microsoft\Teams"
-    $updateExe = Join-Path $teamsPath 'Update.exe'
-    $teamsExe  = Join-Path $teamsPath 'current\Teams.exe'
-
-    if ((Test-Path $updateExe) -and (Test-Path $teamsExe)) {
+    $teamsExe = "$($_.FullName)\AppData\Local\Microsoft\Teams\current\Teams.exe"
+    if (Test-Path $teamsExe) {
         try {
             $version = [Version](Get-Item $teamsExe).VersionInfo.ProductVersion
-            if ($version -lt $targetVersion) {
-                Write-Output "Uninstalling Teams for '$($_.Name)' (v$version)..."
-                $code = (Start-Process $updateExe -ArgumentList "-uninstall -s" -Wait -PassThru).ExitCode
-                if ($code -eq 0) { Write-Output "Uninstalled successfully." }
-                else { Write-Output "Uninstall failed. ExitCode: $code" }
-                if (Test-Path $teamsPath) {
-                    Remove-Item $teamsPath -Recurse -Force
-                    Write-Output "Removed Teams directory."
-                }
-            } else {
-                Write-Output "Skipping '$($_.Name)'; v$version is current."
+            if ($version -le $targetVersion) {
+                Write-Output "User '$($_.Name)' has Teams version $version (<= $targetVersion)."
+                $found = $true
             }
         } catch {
-            Write-Output "Error processing '$($_.Name)': $_"
+            Write-Output "Error reading Teams version for '$($_.Name)': $_"
         }
     }
 }
 
+if (-not $found) {
+    Write-Output "No Teams installations found at version $targetVersion or lower."
+}
+
 exit 0
+
