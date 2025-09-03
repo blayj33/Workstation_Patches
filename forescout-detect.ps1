@@ -87,7 +87,7 @@ function Test-WmiProduct {
 }
 
 # Main logic
-$exePath        = Join-Path $env:ProgramFiles 'ForeScout SecureConnector\SecureConnector.exe'
+$exePath        = Join-Path $env:ProgramFiles 'ForeScoutSecureConnector\SecureConnector.exe'
 $startMenuPath  = 'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\ForeScout SecureConnector'
 $foundExe       = Test-Executable -Path $exePath
 $foundStartMenu = Test-StartMenu  -Path $startMenuPath
@@ -103,4 +103,5 @@ else {
     Write-Host "ForeScout SecureConnector not detected." -ForegroundColor Red
     exit 0
 }
+
 
