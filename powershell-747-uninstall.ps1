@@ -1,14 +1,25 @@
-# List of PowerShell MSI product GUIDs to uninstall
+# Define the product GUIDs you want to remove
 $guids = @(
-    '{E3344F20-4344-46B2-9BEA-6A7602250FB7}',  # PowerShell 7-x64
-    '{5c53f83f-8530-49bd-b1b9-c2e0a3f98507}',  # PowerShell 7.4.5
-    '{8f477957-4a80-4514-9943-25a7614782b0}',  # PowerShell 7.4.3
-    '{cc016dce-e309-403c-81db-442f680e18ac}',  # PowerShell 7.4.6
-    '{57ab3d40-c876-4caf-88cd-3bbfc669479c}'   # PowerShell 7.4.7
+    '{E3344F20-4344-46B2-9BEA-6A7602250FB7}',
+    '{5C53F83F-8530-49BD-B1B9-C2E0A3F98507}',
+    '{8F477957-4A80-4514-9943-25A7614782B0}',
+    '{CC016DCE-E309-403C-81DB-442F680E18AC}',
+    '{57AB3D40-C876-4CAF-88CD-3BBFC669479C}'
 )
 
+# 32-bit uninstall registry hive on 64-bit Windows
+$uninstallRoot = 'HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall'
+
 foreach ($guid in $guids) {
-    Start-Process msiexec.exe `
-      -ArgumentList "/x $guid /qn /norestart" `
-      -Wait -NoNewWindow
+    $regKey = Join-Path $uninstallRoot $guid
+
+    if (Test-Path $regKey) {
+        Write-Host "Found $guid – uninstalling…" -ForegroundColor Cyan
+        Start-Process msiexec.exe `
+            -ArgumentList "/x $guid /qn /norestart" `
+            -Wait -NoNewWindow
+    }
+    else {
+        Write-Host "GUID $guid not present in 32-bit Uninstall hive." -ForegroundColor Yellow
+    }
 }
