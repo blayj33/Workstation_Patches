@@ -26,6 +26,7 @@ $GuidsToUninstall = @(
     'CC016DCE-E309-403C-81DB-442F680E18AC',
     '57AB3D40-C876-4CAF-88CD-3BBFC669479C',
     'C2219E29-B390-4FD6-958F-469F68C20B9F'
+    'a609cfee-e0e7-40cd-984e-5d3031037f8a'
 )
 
 # Registry roots to search
