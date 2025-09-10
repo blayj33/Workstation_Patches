@@ -1,44 +1,17 @@
-<#
-.SYNOPSIS
-  Searches known install paths for Teams’ Squirrel updater and triggers an update.
+# Define variables
+$msiUrl  = 'https://statics.teams.cdn.office.net/evergreen-assets/DesktopClient/MSTeamsSetup.exe'
+$msiPath = "$env:TEMP\Teams_x64.msi"
 
-.DESCRIPTION
-  Teams’ per-user client includes Update.exe under %LocalAppData%\Microsoft\Teams.
-  Preview/dev channels and machine-wide installs live in variant folders.
-  This script iterates through those paths, starts each updater found,
-  and reports any successes or failures.
-#>
+# Download the latest MSI
+Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing
 
-# Known Squirrel update executable locations
-$updaterPaths = @(
-  # Per-user stable channel
-  "$env:LOCALAPPDATA\Microsoft\Teams\Update.exe",
-  # Per-user preview/dev channel
-  "$env:LOCALAPPDATA\Microsoft\Teams Dev\Update.exe",
-  # Machine-wide installer loader (may proxy to per-user installs)
-  "$env:ProgramFiles(x86)\Teams Installer\Update.exe"
-)
+# Install/upgrade machine-wide (per-user installs are automatically updated)
+Start-Process -FilePath msiexec.exe `
+    -ArgumentList "/i `"$msiPath`" ALLUSER=1 ALLUSERCONTEXT=1 /qn /norestart" `
+    -Wait
 
-$didTrigger = $false
+# Clean up
+Remove-Item -Path $msiPath -Force
 
-foreach ($path in $updaterPaths) {
-    if (Test-Path -LiteralPath $path) {
-        try {
-            Start-Process -FilePath $path `
-                          -ArgumentList '--processStart','Teams.exe' `
-                          -NoNewWindow -ErrorAction Stop
-
-            Write-Output "✅ Triggered updater at:`n$path"
-            $didTrigger = $true
-        }
-        catch {
-            Write-Warning "⚠ Failed to launch updater at:`n$path`n$_"
-        }
-    }
-}
-
-if (-not $didTrigger) {
-    Write-Warning "No Teams updater executable found in any of the known locations."
-    Write-Output "Checked paths:`n$($updaterPaths -join "`n")"
-}
-
+Write-Output "Teams MSI deployed. Verify with:"
+Write-Output "  (Get-Item '\$env:ProgramFiles\Teams Installer\Teams.exe').VersionInfo.FileVersion"
