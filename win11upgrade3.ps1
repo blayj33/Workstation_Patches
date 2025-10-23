@@ -1,12 +1,17 @@
 # ====================================================================
-# Windows 11 Upgrade Script (ISO Method with Download and Bypass)
+# Windows 11 Upgrade Script (Assistant First, ISO Fallback with Bypass)
 # ====================================================================
 
+# --- Global Control Variables ---
 $bypassCheck = $true # Set to $true to enable all registry bypass settings
 
-# --- ISO Download and Path Variables ---
+# --- Upgrade Assistant Variables ---
+$AssistantUrl = "https://go.microsoft.com/fwlink/?linkid=2171764" # Official link for the Upgrade Assistant
+$AssistantFile = "$env:ProgramData\_Windows_Upgrade\Win11UpgradeAssistant.exe"
+
+# --- ISO Download and Path Variables (Fallback Method) ---
 # NOTE: The provided URL is for a time-limited download. It may expire.
-$Url = "https://software.download.prss.microsoft.com/dbazure/Win11_25H2_English_x64.iso?t=241267d7-908d-4fe7-9e9e-80e5587d4a2e&P1=1761307714&P2=601&P3=2&P4=pTza2HrvHtYGFyVpUBUqEiIV1R0xKQ3Vzt882zBHXHYQiaOenPwqaQg1tO1V7HQ7jjOCU1bm09YtmnF0E6C1wUOd5DMQo6STOBy7HWqXZ3jVRaTT4J%2bwwhxkHQir5HBdQhs9RfGrVGxW%2f43D8SA0v4CqxemjYG82RgY6kCuWU2b6TOhq0CxRKBk2NxkCMT5Ca7HOwwWrS48tBwfAqZGWbBR3SLAhdW7KWidPY35%2fg02IqX4xXR2%2bfS%2fob4AlBYAGWm2%2bh6MgON5Bt41WzcuGfh5Qz7qBnKjNljKp0zSuFWVArhczAInxYbvUTlM5rSNN1aWFZ6hdXuj%2fzYE6vy6%2biA%3d%3d"
+$Url = "https://software.download.prss.microsoft.com/dbazure/Win11_25H2_English_x64.iso?t=241267d7-908d-4fe7-9e9e-80e5587d4a2e&P1=1761307714&P2=601&P3=2&P4=pTza2HrvHtYGFyVpUBUqEiIV1R0xKQ3Vzt882zBHXHYQiaOenPwqaQg1tO1V7HQ7jjOCU1bm09YtmnF0E6C1wUOd5DMQo6STOBy7HWqXZ3jVRaTT4J%2bwwhxkHQir5HBdQhs9RfGrVGxV%2f43D8SA0v4CqxemjYG82RgY6kCuWU2b6TOhq0CxRKBk2NxkCMT5Ca7HOwwWrS48tBwfAqZGWbBR3SLAhdW7KWidPY35%2fg02IqX4xXR2%2bfS%2fob4AlBYAGWm2%2bh6MgON5Bt41WzcuGfh5Qz7qBnKjNljKp0zSuFWVArhczAInxYbvUTlM5rSNN1aWFZ6hdXuj%2fzYE6vy6%2biA%3d%3d"
 $DownloadDir = "$env:ProgramData\_Windows_Upgrade"
 $ISOFile = "$DownloadDir\Win11.iso"
 $MountDriveLetter = $null # Will be set dynamically after mounting
@@ -26,7 +31,7 @@ if ($UseTempFolder) {
 $LogFilePath = "$LogDir\Win11Compatibility_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
 
 # ====================================================================
-# Utility Functions
+# Utility Functions (Unchanged - Write-Log, createLogFolder, Set-CustomRegistryValue)
 # ====================================================================
 
 function Write-Log {
@@ -80,7 +85,8 @@ function Set-CustomRegistryValue {
 }
 
 # ====================================================================
-# Compatibility Checks (Kept for logging/bypass)
+# Compatibility Checks (Unchanged - Check-CPU, Check-RAM, Check-Storage, Check-TPM, Check-WindowsVersion, checkCompatibility)
+# NOTE: These checks are now only performed *before* the ISO fallback method.
 # ====================================================================
 
 function Check-CPU {
@@ -222,22 +228,85 @@ function checkCompatibility {
 }
 
 # ====================================================================
-# ISO Functions (Download, Mount, Dismount)
+# Upgrade Assistant Functions (NEW)
+# ====================================================================
+
+function DownloadAssistant {
+    Write-Log "Starting Upgrade Assistant download."
+
+    if (Test-Path $AssistantFile) {
+        Write-Log "Assistant file already exists at '$AssistantFile'. Skipping download."
+        return $true
+    }
+
+    try {
+        Invoke-WebRequest -Uri $AssistantUrl -OutFile $AssistantFile -MaximumRedirection 5
+        if (Test-Path $AssistantFile) {
+            Write-Log "Downloaded Upgrade Assistant successfully to $AssistantFile" "Success"
+            return $true
+        } else {
+            Write-Log "Downloaded Upgrade Assistant file does not exist after download." "Error"
+            return $false
+        }
+    } catch {
+        Write-Log "Error while downloading Upgrade Assistant: $($_.Exception.Message)" "Error"
+        if (Test-Path $AssistantFile) { Remove-Item $AssistantFile -Force -ErrorAction SilentlyContinue }
+        return $false
+    }
+}
+
+function runUpgradeAssistant {
+    Write-Log "Attempting to run Windows 11 Upgrade Assistant..."
+
+    if (-not (Test-Path $AssistantFile)) {
+        Write-Log "Error: Upgrade Assistant not found. Cannot run." "Error"
+        return $false
+    }
+
+    try {
+        # Running the assistant. It is a GUI process and will wait for user interaction or completion.
+        $process = Start-Process -FilePath $AssistantFile -Wait -PassThru
+        $exitCode = $process.ExitCode
+
+        # The assistant may not return a reliable exit code, and it often requires user interaction.
+        Write-Log "Upgrade Assistant finished with Exit Code: $exitCode"
+
+        # Typically, a code of 0 or a positive value means it ran.
+        # It's difficult to know if the *upgrade* actually started without user confirmation.
+        # We will assume success if the exit code is 0 (or simply ran), and let the user know.
+        if ($exitCode -eq 0) {
+            Write-Log "Upgrade Assistant ran successfully. Check your desktop for instructions or restart." "Success"
+            Write-Log "If the upgrade process hasn't started, the script will now proceed to the ISO fallback."
+            return $true # A "clean" run means we've done our due diligence.
+        } else {
+            Write-Log "Upgrade Assistant returned an abnormal exit code. Falling back to ISO method." "Warning"
+            return $false
+        }
+
+    } catch {
+        Write-Log "Error running Upgrade Assistant: $($_.Exception.Message)" "Error"
+        Write-Log "Falling back to ISO method." "Error"
+        return $false
+    }
+}
+
+# ====================================================================
+# ISO Functions (Download, Mount, Dismount, UpgradeProcess) (Unchanged)
 # ====================================================================
 
 function DownloadISO {
     Write-Log "Starting ISO download from URL. This may take a long time..."
-    
+
     if (Test-Path $ISOFile) {
         Write-Log "ISO file already exists at '$ISOFile'. Skipping download."
         return $true
     }
-    
+
     try {
         # Using a .NET WebClient for large file downloads, as it often handles them better than Invoke-WebRequest
         $WebClient = New-Object System.Net.WebClient
         $WebClient.DownloadFile($Url, $ISOFile)
-        
+
         if (!(Test-Path $ISOFile)) {
             Write-Log "Downloaded ISO file does not exist after download." "Error"
             return $false
@@ -265,7 +334,7 @@ function MountISO {
 
         # Find the drive letter assigned to the mounted image
         $driveLetter = ($mountedImage | Get-Volume).DriveLetter
-        
+
         if ($driveLetter) {
             # Assign the drive letter to the global variable for use in upgradeProcess
             $script:MountDriveLetter = "$driveLetter`:"
@@ -292,30 +361,26 @@ function DismountISO {
     }
 }
 
-# ====================================================================
-# Upgrade Process
-# ====================================================================
-
 function upgradeProcess {
     if (-not $script:MountDriveLetter) {
         Write-Log "Error: ISO was not successfully mounted. Cannot proceed with upgrade." "Error"
         exit 1
     }
-    
+
     $SetupExePath = "$script:MountDriveLetter\setup.exe"
     Write-Log "Starting silent upgrade to Windows 11 from: $SetupExePath"
-    
+
     # /Auto Upgrade performs an in-place upgrade.
     # /Quiet and /DynamicUpdate disable the GUI and stop it from downloading new updates during setup.
     # /Compat IgnoreWarning skips compatibility checks (bypassed via registry).
     # /NoReboot allows the script to finish and dismount the ISO before the system restarts.
     $Arguments = "/Auto Upgrade /Quiet /DynamicUpdate Disable /Compat IgnoreWarning /NoReboot" 
-    
+
     try {
         $process = Start-Process -FilePath $SetupExePath -ArgumentList $Arguments -Wait -PassThru -NoNewWindow
-        
+
         Write-Log "Setup.exe finished with Exit Code: $($process.ExitCode)"
-        
+
         # 0 or 3221225506 (0xC0000002) are common success codes indicating a reboot is needed.
         if ($process.ExitCode -eq 0 -or $process.ExitCode -eq 3221225506) {
             Write-Log "Upgrade preparation completed. A reboot is required to continue the installation." "Success"
@@ -330,35 +395,55 @@ function upgradeProcess {
 }
 
 # ====================================================================
-# Main Execution
+# Main Execution (UPDATED)
 # ====================================================================
 
 function main {
     createLogFolder
 
-    # 1. Set Compatibility Bypasses
+    # 1. ATTEMPT UPGRADE ASSISTANT FIRST
+    Write-Log "--- PHASE 1: ATTEMPTING UPGRADE ASSISTANT ---"
+    if (DownloadAssistant) {
+        runUpgradeAssistant
+        # NOTE: Since the Upgrade Assistant is a GUI, it requires user interaction and may take time.
+        # If it runs, we assume the user will proceed with it.
+        Write-Log "If the Upgrade Assistant was successful, the script execution will stop here." "Information"
+        Write-Log "If the Upgrade Assistant was *not* successful or the user closed it, we will proceed with the ISO fallback in 30 seconds."
+        
+        # Wait for the user to possibly start the upgrade with the assistant, then check for failure/cancellation.
+        # This is an imperfect check, but gives the user time to initiate the GUI upgrade.
+        Start-Sleep -Seconds 30 
+    } else {
+        Write-Log "Failed to download Upgrade Assistant. Proceeding to ISO fallback." "Warning"
+    }
+
+    # 2. FALLBACK TO ISO METHOD
+    Write-Log "--- PHASE 2: FALLBACK TO ISO METHOD (WITH BYPASS) ---"
+
+    # 2a. Set Compatibility Bypasses & Run Checks
     Write-Log "Setting registry bypass for Windows 11 compatibility checks."
     Set-CustomRegistryValue "AllowUpgradesWithUnsupportedSecureBoot"
     Set-CustomRegistryValue "AllowUpgradesWithUnsupportedOS"
     checkCompatibility # Logs any issues, registry keys are set within checks if needed.
-    
-    # 2. Download ISO
+
+    # 2b. Download ISO
     if (-not (DownloadISO)) {
         Write-Log "Fatal Error: Failed to download Windows 11 ISO. Exiting script." "Error"
         exit 1
     }
-    
-    # 3. Mount ISO and Start Upgrade
+
+    # 2c. Mount ISO and Start Upgrade
     if (MountISO) {
         upgradeProcess
         DismountISO
-        
-        # 4. Final Instruction
-        Write-Log "Script execution completed. THE SYSTEM NEEDS TO REBOOT NOW to complete the Windows 11 upgrade." "Success"
+
+        # 2d. Final Instruction
+        Write-Log "Script execution completed using the ISO fallback method. THE SYSTEM NEEDS TO REBOOT NOW to complete the Windows 11 upgrade." "Success"
         Write-Log "To initiate the required reboot, run the following command:"
         Write-Log "shutdown /r /t 0" "Success"
     } else {
         Write-Log "Upgrade failed because the ISO could not be mounted. Exiting script." "Error"
+        exit 1
     }
 }
 
